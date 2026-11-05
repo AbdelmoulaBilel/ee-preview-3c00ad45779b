@@ -3,6 +3,7 @@ var TODAY = new Date(2026, 10, 5); // Thursday 5 November 2026, a send day
 var STAGES = ['Not contacted', 'Emailing', 'Replied', 'Talking', 'Shortlist sent', 'Won', 'Not now'];
 var STAGE_TOTALS = { brand: [760, 402, 71, 26, 17, 6, 52], creator: [1080, 410, 93, 32, 6, 3, 42] };
 var OPTED_TOTAL = 42;
+var WAITING_TOTAL = 46;
 var NICHES = ['Accounting', 'AI tools', 'AI writing', 'Analytics', 'Design tools', 'Developer tools', 'DevOps', 'Ecommerce AI', 'Finance software', 'Fintech', 'No-code', 'Privacy', 'Productivity', 'SaaS reviews', 'Security', 'Video AI', 'Voice AI'];
 var NEAR = {
   Security: ['Privacy'], Privacy: ['Security'], 'Developer tools': ['DevOps'], DevOps: ['Developer tools'],

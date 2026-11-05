@@ -44,7 +44,7 @@ function emailOk(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim())
 /* ---------- State ---------- */
 function freshState() {
   return { patches: {}, deleted: {}, added: [], batchApproved: false, pulled: {}, decisions: {}, extraFlag: [], mailEdits: {}, heldDone: {}, replyDone: {}, replyType: {}, stopped: false, side: true, signedOut: false, role: 'Admin',
-    rules: { days: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: false, Sat: false, Sun: false }, naFrom: '09:03', naTo: '17:00', oFrom: '09:03', oTo: '11:00', tz: 'ct', fu: '3', gapA: 25, gapB: 60, c1: 80, c2: 100, c3: 150, footer: FOOTER },
+    rules: { days: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: false, Sat: false, Sun: false }, naFrom: '09:03', naTo: '17:00', oFrom: '09:03', oTo: '11:00', tz: 'ct', fu: '3', gapA: 25, gapB: 60, c1: 80, c2: 100, c3: 150, footer: FOOTER, auto: false },
     spend: { checks: 25, ai: 10, find: '' }, optExtra: [], team: [], log: [], templates: clone(TEMPLATES), imported: false };
 }
 var S;
@@ -255,9 +255,10 @@ function shell(cur, body) {
 }
 
 /* ---------- Today ---------- */
+function isApproved() { return S.batchApproved || !!S.rules.auto; }
 function needReplies() { return REPLIES.filter(function (r) { return r.needs && !S.replyDone[r.id]; }); }
 function viewToday() {
-  var und = undecided().length, approved = S.batchApproved, stopped = S.stopped;
+  var und = undecided().length, approved = isApproved(), stopped = S.stopped;
   var health = stopped ? { badge: 'b-red', word: 'Stopped', head: 'Creator emails stopped.', detail: 'Gmail signed the partnerships inbox out at 11:20 AM. 61 creator emails are waiting and nothing is lost. Brand emails are still sending.' } :
     { badge: 'b-green', word: 'Working', head: 'Sending normally.', detail: 'Both inboxes are connected and sending. Next email goes out at 2:31 PM. Last checked 1 minute ago.' };
   var sent = stopped ? 151 : 212, pUsed = stopped ? 31 : 92;
@@ -279,13 +280,28 @@ function viewToday() {
     (stopped ? primary('Sign in again', { on: signBackIn }) : !approved ? primary('Approve Monday’s emails', { href: '#/approve', icon: 'approve' }) : '') + '</div></div>' +
     '<section class="card card-body" aria-label="Is it working"><div class="between" style="align-items:flex-start;gap:24px"><div style="flex:1 1 420px;min-width:0">' + badge(health.word, health.badge) + '<p class="hero-line">' + esc(health.head) + '</p><p class="muted" style="margin:4px 0 0">' + esc(health.detail) + '</p></div>' +
     '<div class="figs figs-side"><div><div class="fig-n">' + sent + '</div><div class="fig-l">sent today, of 250</div></div><div><div class="fig-n">' + needReplies().length + '</div><div class="fig-l">replies need you</div></div><div><div class="fig-n">' + heldLeft() + '</div><div class="fig-l">not sent, each with a reason</div></div></div></div></section>' +
-    '<div class="cols"><div class="col-main"><section class="card" aria-labelledby="needs"><div class="card-head"><h2 class="card-title" id="needs">Needs you</h2><span class="small muted">' + (needs.length ? plural(needs.length, 'thing') : 'All clear') + '</span></div>' +
+    emailStrip(sent) + '<div class="cols"><div class="col-main"><section class="card" aria-labelledby="needs"><div class="card-head"><h2 class="card-title" id="needs">Needs you</h2><span class="small muted">' + (needs.length ? plural(needs.length, 'thing') : 'All clear') + '</span></div>' +
     (needs.length ? '<ul class="list">' + needs.map(function (n) { return '<li><div class="grow"><div class="medium">' + esc(n.title) + '</div><div class="cell-sub">' + esc(n.sub) + '</div></div>' + n.right + '</li>'; }).join('') + '</ul>' : '<div class="empty">Nothing needs you right now. The app keeps sending.</div>') + '</section>' +
     '<section class="card" aria-labelledby="since"><div class="card-head"><h2 class="card-title" id="since">Since your last visit</h2><span class="small muted">Tuesday 3:40 PM · handled by the app</span></div><div class="card-body"><ol class="tl">' +
     since.map(function (e) { return '<li><div class="row">' + badge(e.word, e.badge) + '<span class="tl-when">' + esc(e.when) + '</span></div><div class="tl-what">' + esc(e.what) + '</div></li>'; }).join('') + '</ol>' +
     '<div style="margin:12px 0 0 -8px">' + link(ui.showAll ? 'Show less' : 'Show all ' + SINCE.length, { on: function () { ui.showAll = !ui.showAll; render(); } }) + '</div></div></section></div>' +
     '<div class="col-side"><section class="card" aria-labelledby="inboxes"><div class="card-head"><h2 class="card-title" id="inboxes">Inboxes</h2>' + link('Sending rules', { href: '#/settings/rules' }) + '</div><ul class="list">' +
     inboxes.map(inboxRow).join('') + '</ul></section></div></div>');
+}
+function dueFollowUps() { return LEADS.filter(function (l) { if (l.stage !== 'Emailing' || !alive(l) || l.allPaused) return false; var n = nextStep(l); return n && n.short === 'Today' && n.i > 0; }).slice(0, 31); }
+function emailStrip(sent) {
+  var due = dueFollowUps().length, tiles = [
+    { n: sent, label: 'sent today', on: function () { openModal({ type: 'batch', kind: 'sent' }); } },
+    { n: Math.max(0, 250 - sent), label: 'still going out today', on: function () { openModal({ type: 'batch', kind: 'going' }); } },
+    { n: needReplies().length, label: 'need a reply', on: function () { go('#/replies'); } },
+    { n: due, label: 'follow ups due today', on: function () { openModal({ type: 'batch', kind: 'followup' }); } },
+    { n: WAITING_TOTAL, label: 'waiting for Monday', on: function () { openModal({ type: 'batch', kind: 'waiting' }); } }
+  ];
+  return '<section class="card" aria-labelledby="todayMail"><div class="card-head"><h2 class="card-title" id="todayMail">Today\u2019s emails</h2><span class="small muted">Click any number to see who</span></div><div class="stages stages-5">' + tiles.map(function (t) { return '<button class="stage" type="button" ' + act(t.on) + '><span class="fig-n">' + fmt(t.n) + '</span><span class="fig-l">' + esc(t.label) + '</span></button>'; }).join('') + '</div></section>';
+}
+function genFollowUp(l) {
+  var first = (l.contact || l.name).split(' ')[0];
+  return l.kind === 'brand' ? 'Hi ' + first + ',\n\nStill happy to send a few ' + l.niche.toLowerCase() + ' creators for ' + l.name + '. Would this week work?\n\nKamal' : 'Hi ' + first + ',\n\nA couple of ' + l.niche.toLowerCase() + ' brands are still looking for creators. Want the names?\n\nKamal';
 }
 function inboxRow(b) {
   return '<li style="display:block"><div class="between" style="align-items:flex-start"><div style="min-width:0"><div class="medium" style="overflow-wrap:anywhere">' + esc(b.name) + '</div><div class="cell-sub">' + esc(b.role) + '</div></div>' + badge(b.word, b.badge) + '</div>' +
@@ -299,7 +315,7 @@ function viewApprove(tab) {
   tab = tab || 'normal';
   var ready = readyCount(), und = undecided();
   var head = '<div class="head"><div><h1 class="title">Approve</h1><p class="subtitle">Monday 9 November. Nothing sends Friday to Sunday.</p></div>' + (tab === 'normal' ? '<div class="actions">' +
-    (S.batchApproved ? badge('Approved', 'b-green') + btn('Undo approval', { on: function () { S.batchApproved = false; save(); logIt('Undid approval of Monday’s emails.'); render(); toast('Approval undone'); } }) :
+    (S.rules.auto ? badge('Sends on its own', 'b-green') + link('Change this', { href: '#/settings/rules' }) : S.batchApproved ? badge('Approved', 'b-green') + btn('Undo approval', { on: function () { S.batchApproved = false; save(); logIt('Undid approval of Monday’s emails.'); render(); toast('Approval undone'); } }) :
       btn('Send me a test', { icon: 'send', on: function () { toast('Test email sent to kamal@eliteedge.example (sample)'); } }) + primary('Approve ' + ready + ' emails', { icon: 'check', on: function () { openModal({ type: 'approve' }); } })) + '</div>' : '') + '</div>';
   var t = tabs([{ label: 'Look normal', count: ready, sel: tab === 'normal', href: '#/approve' }, { label: 'Need a look', count: und.length, sel: tab === 'look', href: '#/approve/look' }, { label: 'Will not send', count: heldLeft(), sel: tab === 'held', href: '#/approve/held' }], 'Monday’s emails');
   var body = tab === 'look' ? approveLook() : tab === 'held' ? approveHeld() : approveNormal();
@@ -408,9 +424,21 @@ function replyRow(r) {
     else if (r.id === 'fundrail') acts += link('Review Tom’s email', { on: function () { S.replyDone.fundrail = true; save(); openReview('f2'); } });
     if (r.needs) acts += link('Mark done', { on: function () { S.replyDone[r.id] = true; save(); render(); toast('Marked done'); } });
   }
+  if (!done) acts += link('Write reply with AI', { on: function () { openReplyAi(r); } });
   acts += btn('Open in Gmail', { sm: 1, icon: 'external', on: function () { sampleNote('In the real app this opens the thread in Gmail'); } });
   return '<tr><td style="min-width:200px"><div class="person">' + avatar(r.from) + '<div><a class="name-link" href="#/p/' + r.lead + '">' + esc(r.from) + '</a><div class="cell-sub">' + esc(r.company) + '</div><div class="cell-sub">' + esc(r.when) + '</div></div></div></td><td style="min-width:280px"><div style="color:var(--color-text)">“' + esc(r.quote) + '”</div><div class="cell-sub" style="margin-top:4px">' + esc(done ? r.did + ' Done.' : r.did) + '</div></td>' +
     '<td>' + select({ id: 'type-' + r.id, compact: true, width: '170px', label: 'Reply type for ' + r.from, value: t, options: REPLY_TYPES.map(function (x) { return { value: x, label: x }; }), pick: function (v) { if (!v) return; S.replyType[r.id] = v; save(); render(); toast('Reply type changed to ' + v); } }) + '</td><td class="r nowrap"><div class="stack-actions">' + acts + '</div></td></tr>';
+}
+
+function replyDraft(r) {
+  var first = r.from.split(' ')[0], t = replyType(r);
+  var body = { 'Send shortlist': 'Thanks for the quick reply. I\u2019ll send a few names with rough pricing today.', Interested: 'Great to hear. I\u2019ll look through your rate card and come back with brands that fit.', 'Wrong person': 'Thanks for letting me know, and all the best in the new team.', 'Out of office': 'No rush. I\u2019ll follow up when you\u2019re back.', 'Not now': 'Thanks for the honest answer. I\u2019ll check back in spring.', 'Not interested': 'Understood, and thanks for replying. I won\u2019t write again.' }[t];
+  return 'Hi ' + first + ',\n\n' + body + '\n\nKamal';
+}
+function openReplyAi(r) {
+  var m = { type: 'replyAi', r: r, loading: true, text: '', tried: false };
+  openModal(m);
+  setTimeout(function () { if (ui.modal === m) { m.loading = false; m.text = replyDraft(r); render(); } }, 900);
 }
 
 /* ---------- Matching and shortlist ---------- */
@@ -661,11 +689,12 @@ function setRules(locked) {
     S.rules = clone(D); save(); logIt('Changed the sending rules.'); render(); toast('Rules saved');
   }) + ' novalidate><div class="card-head"><div><h2 class="card-title">Sending rules</h2><p class="muted" style="margin:2px 0 0">Always in each person’s own time zone. New rules apply from the next email.</p></div></div><div class="card-body form"><fieldset' + (locked ? ' disabled' : '') + '><legend class="label" style="margin-bottom:6px">Send days</legend><div class="row" style="gap:20px">' +
     Object.keys(D.days).map(function (d) { return '<label class="row" style="gap:6px;flex-wrap:nowrap"><input type="checkbox" class="check"' + (D.days[d] ? ' checked' : '') + (locked ? ' disabled' : '') + ' ' + change(function () { D.days[d] = !D.days[d]; }) + '>' + d + '</label>'; }).join('') + '</div><p class="hint" style="margin:6px 0 0">No cold emails on unticked days. Replies still arrive and are sorted.</p></fieldset>' +
+    '<label class="row" style="gap:10px;flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" class="check" style="margin-top:1px"' + (D.auto ? ' checked' : '') + (locked ? ' disabled' : '') + ' ' + change(function () { D.auto = !D.auto; }) + '><span><span class="medium">Send normal emails without my approval</span><span class="hint" style="display:block;margin-top:2px">Only unusual emails wait for you, like an unsure address or a new contact.</span></span></label>' +
     '<div class="form-2">' + field('North America, from', 'naFrom', inp('naFrom', D.naFrom, function (e) { D.naFrom = e.target.value; }, { type: 'time', disabled: locked }), { req: 1 }) + field('North America, until', 'naTo', inp('naTo', D.naTo, function (e) { D.naTo = e.target.value; }, { type: 'time', disabled: locked }), { req: 1 }) + field('Other regions, from', 'oFrom', inp('oFrom', D.oFrom, function (e) { D.oFrom = e.target.value; }, { type: 'time', disabled: locked }), { req: 1 }) + field('Other regions, until', 'oTo', inp('oTo', D.oTo, function (e) { D.oTo = e.target.value; }, { type: 'time', disabled: locked }), { req: 1 }) +
     '<div class="field"><span class="label">When we don’t know their time zone</span>' + select({ id: 'tz', width: '100%', label: 'When we don’t know their time zone', value: D.tz, disabled: locked, options: [{ value: 'ct', label: 'Use Central Time' }, { value: 'et', label: 'Use Eastern Time' }, { value: 'pt', label: 'Use Pacific Time' }], pick: function (v) { D.tz = v || 'ct'; render(); } }) + '<span class="hint">An unknown time zone never stops an email.</span></div>' +
     '<div class="field"><span class="label">Follow ups per person, up to</span>' + select({ id: 'fu', width: '100%', label: 'Follow ups per person', value: D.fu, disabled: locked, options: [{ value: '3', label: '3 follow ups' }, { value: '2', label: '2 follow ups' }, { value: '1', label: '1 follow up' }, { value: '0', label: 'No follow ups' }], pick: function (v) { D.fu = v || '3'; render(); } }) + '<span class="hint">3 days apart, on send days. All stop on a reply, bounce or opt-out. Out of office only pauses them.</span></div>' +
     field('Shortest wait between emails, seconds', 'gapA', inp('gapA', D.gapA, function (e) { D.gapA = e.target.value; }, { type: 'number', disabled: locked }), { req: 1 }) + field('Longest wait between emails, seconds', 'gapB', inp('gapB', D.gapB, function (e) { D.gapB = e.target.value; }, { type: 'number', disabled: locked }), { req: 1 }) + '</div>' +
-    '<div><h3 class="card-title" style="margin-bottom:4px">Daily limit per inbox</h3><p class="hint" style="margin:0 0 12px">Counted over any 24 hours, follow ups included. New inboxes start low and grow.</p><div class="form-3">' + field('Weeks 1 and 2', 'c1', inp('c1', D.c1, function (e) { D.c1 = Number(e.target.value); }, { type: 'number', disabled: locked })) + field('Week 3', 'c2', inp('c2', D.c2, function (e) { D.c2 = Number(e.target.value); }, { type: 'number', disabled: locked })) + field('After that, up to', 'c3', inp('c3', D.c3, function (e) { D.c3 = Number(e.target.value); }, { type: 'number', disabled: locked })) + '</div></div>' +
+    '<div><h3 class="card-title" style="margin-bottom:4px">Daily limit per inbox</h3><p class="hint" style="margin:0 0 12px">Counted over any 24 hours, follow ups included. Anyone over the limit waits and sends on the next send day, so nobody gets lost.</p><div class="form-3">' + field('Weeks 1 and 2', 'c1', inp('c1', D.c1, function (e) { D.c1 = Number(e.target.value); }, { type: 'number', disabled: locked })) + field('Week 3', 'c2', inp('c2', D.c2, function (e) { D.c2 = Number(e.target.value); }, { type: 'number', disabled: locked })) + field('After that, up to', 'c3', inp('c3', D.c3, function (e) { D.c3 = Number(e.target.value); }, { type: 'number', disabled: locked })) + '</div></div>' +
     field('Footer on every email', 'footer', area('footer', D.footer, function (e) { D.footer = e.target.value; }, 3, { disabled: locked }), { req: 1, hint: 'The opt-out line and postal address can’t be removed.' }) +
     '<div><h3 class="card-title" style="margin-bottom:4px">Check a send time</h3><p class="hint" style="margin:0 0 12px">Pick where someone lives to see when their email goes out, using the saved rules.</p><div class="row">' + select({ id: 'sendCheck', width: '200px', label: 'Where they live', value: ui.sendCheck, options: ['New York', 'Chicago', 'Los Angeles', 'London', 'Berlin', 'Dubai', 'Sydney'].map(function (c) { return { value: c, label: c }; }), pick: function (v) { ui.sendCheck = v || 'Chicago'; render(); } }) + '<div><div class="medium">' + esc(sc.their) + '</div><div class="cell-sub">' + esc(sc.yours) + '</div></div></div></div>' +
     (err ? '<div class="form-error" role="alert">Rules not saved. ' + esc(err) + '</div>' : '') + '</div><div class="card-foot">' + btn('Cancel', { disabled: locked, on: function () { ui.ruleDraft = null; ui.rulesErr = ''; render(); } }) + primary('Save rules', { type: 'submit', disabled: locked }) + '</div></form>';
@@ -689,7 +718,7 @@ function setInboxes(locked) {
   var st = S.stopped;
   return '<section class="card"><div class="card-head"><div><h2 class="card-title">Inboxes</h2><p class="muted" style="margin:2px 0 0">Brand emails go from your inbox. Creator emails go from partnerships, with its signature.</p></div>' + btn('Add an inbox', { sm: 1, icon: 'plus', disabled: locked, on: function () { sampleNote('In the real app, Google sign-in opens here'); } }) + '</div><ul class="list">' +
     inboxRow({ name: 'kamal@eliteedge.example', role: 'Brand outreach', used: 120, cap: 150, badge: 'b-green', word: 'Working', cls: '', note: 'room for 30 more today' }) +
-    inboxRow({ name: 'partnerships@eliteedge.example', role: 'Creator outreach · daily limit ' + S.rules.c2 + ' now, up to ' + S.rules.c3 + ' by Mon 23 Nov', used: st ? 31 : 92, cap: Number(S.rules.c2), badge: st ? 'b-red' : 'b-gold', word: st ? 'Stopped' : 'Near limit', cls: st ? 'stop' : 'near', note: st ? 'Gmail signed it out' : 'the rest send tomorrow', extra: locked ? '' : '<div style="margin-top:12px">' + (st ? primary('Sign in again', { sm: 1, on: signBackIn }) : btn('See what happens if Gmail signs this inbox out', { sm: 1, on: function () { S.stopped = true; save(); go('#/today'); toast('Today now shows the problem, and the fix', 'info'); } })) + '</div>' }) + '</ul></section>';
+    inboxRow({ name: 'partnerships@eliteedge.example', role: 'Creator outreach · daily limit ' + S.rules.c2 + ' now, up to ' + S.rules.c3 + ' by Mon 23 Nov', used: st ? 31 : 92, cap: Number(S.rules.c2), badge: st ? 'b-red' : 'b-gold', word: st ? 'Stopped' : 'Near limit', cls: st ? 'stop' : 'near', note: st ? 'Gmail signed it out' : 'the rest send on Monday', extra: locked ? '' : '<div style="margin-top:12px">' + (st ? primary('Sign in again', { sm: 1, on: signBackIn }) : btn('See what happens if Gmail signs this inbox out', { sm: 1, on: function () { S.stopped = true; save(); go('#/today'); toast('Today now shows the problem, and the fix', 'info'); } })) + '</div>' }) + '</ul></section>';
 }
 function setSpend(locked) {
   var D = ui.spendDraft = ui.spendDraft || clone(S.spend);
@@ -731,7 +760,7 @@ function doImport() {
 /* ---------- Modals ---------- */
 function modalView() {
   var m = ui.modal; if (!m) return '';
-  var fn = { confirm: mConfirm, approve: mApprove, sample: mSample, edit: mEdit, shortlist: mShortlist, brands: mBrands, add: mAdd, step: mStep, details: mDetails, opt: mOpt, invite: mInvite }[m.type];
+  var fn = { confirm: mConfirm, approve: mApprove, sample: mSample, edit: mEdit, shortlist: mShortlist, brands: mBrands, add: mAdd, step: mStep, batch: mBatch, replyAi: mReplyAi, details: mDetails, opt: mOpt, invite: mInvite }[m.type];
   return fn ? fn(m) : '';
 }
 function mConfirm(m) {
@@ -781,12 +810,32 @@ function mAdd(m) {
 function mStep(m) {
   var l = BY[m.leadId], s = stepsOf(l)[m.i], can = !s.sent && !s.stopped && !s.del, first = (l.contact || l.name).split(' ')[0];
   var se = m.tried && !m.subject.trim(), be = m.tried && !m.body.trim();
-  var items = [{ label: 'Shorter', run: function () { m.body = shorter(m.body); m.note = 'Rewritten with AI: shorter. Read it, then save.'; ui.menu = null; render(); } }, { label: 'Warmer', run: function () { m.body = warmer(m.body); m.note = 'Rewritten with AI: warmer. Read it, then save.'; ui.menu = null; render(); } }, { label: 'More personal', run: function () { m.body = personal(m.body, l.name); m.note = 'Rewritten with AI: more personal. Read it, then save.'; ui.menu = null; render(); } }];
+  var items = [{ label: 'Shorter', run: function () { m.body = shorter(m.body); m.note = 'Rewritten with AI: shorter. Read it, then save.'; ui.menu = null; render(); } }, { label: 'Warmer', run: function () { m.body = warmer(m.body); m.note = 'Rewritten with AI: warmer. Read it, then save.'; ui.menu = null; render(); } }, { label: 'More personal', run: function () { m.body = personal(m.body, l.name); m.note = 'Rewritten with AI: more personal. Read it, then save.'; ui.menu = null; render(); } }, { label: 'Write a new one', run: function () { m.body = genFollowUp(l); m.note = 'Written with AI. Read it, then save.'; ui.menu = null; render(); } }];
   var preview = '<div class="mail"><dl class="mail-meta"><dt>To</dt><dd>' + esc((l.contact || l.name) + ' · ' + l.email) + '</dd><dt>From</dt><dd>' + (l.kind === 'brand' ? 'Kamal · kamal@eliteedge.example' : 'Kamal · partnerships@eliteedge.example') + '</dd></dl><div class="mail-subject">' + esc(m.subject) + '</div><div class="mail-body">' + esc(m.body) + '</div>' + mailFoot(l.kind === 'creator') + '</div>';
   return overlay('step', '<form class="panel" role="dialog" aria-modal="true" aria-labelledby="emTitle" ' + submit(function () { if (!can) { closeModal(); return; } if (!m.subject.trim() || !m.body.trim()) { m.tried = true; m.mode = 'edit'; render(); return; } setSeq(l, function (q) { q.edits[m.i] = { subject: m.subject, body: m.body }; }); closeModal(); toast(s.label + ' updated'); }) + ' novalidate>' + dlgHead(s.label, s.when, 'emTitle') + '<div class="dlg-body form">' +
     (can ? '<div class="between">' + seg([{ label: 'Edit', sel: m.mode === 'edit', pick: function () { m.mode = 'edit'; render(); } }, { label: 'See as ' + first + ' will', sel: m.mode === 'preview', pick: function () { m.mode = 'preview'; ui.menu = null; render(); } }], 'View') + aiMenu({ sm: 1 }, items) + '</div>' : '') +
     (can && m.mode === 'edit' ? field('Subject', 'pSub', inp('pSub', m.subject, function (e) { m.subject = e.target.value; }, { err: se }), { req: 1, err: se ? 'Add a subject.' : '' }) + field('Email', 'pBody', area('pBody', m.body, function (e) { m.body = e.target.value; }, 12, { err: be }), { req: 1, err: be ? 'Write the email before saving.' : '', hint: 'Applies to this email only. Signature and footer are added for you.' }) : preview) +
     (m.note ? '<p class="hint" style="margin:0">' + esc(m.note) + '</p>' : '') + '</div><div class="dlg-foot">' + (can ? btn('Cancel', { on: closeModal }) + primary('Save changes', { type: 'submit' }) : btn('Close', { on: closeModal, autofocus: 1 })) + '</div></form>');
+}
+function mBatch(m) {
+  var def = {
+    sent: { title: 'Sent today', sub: 'Every email that went out today, newest first.', list: LEADS.filter(function (l) { return alive(l) && l.stage === 'Emailing'; }), total: S.stopped ? 151 : 212, right: function () { return badge('Sent', 'b-green'); } },
+    going: { title: 'Still going out today', sub: 'These send before the window closes. Pause any of them.', list: LEADS.filter(function (l) { return alive(l) && l.stage === 'Emailing' && !l.allPaused; }).slice(20), total: 250 - (S.stopped ? 151 : 212), right: function (l) { return link('Pause', { on: function () { updateLead(l.id, { allPaused: true, st: 'paused', next: 'Paused by you' }); render(); toast('Emails to ' + l.name + ' paused'); } }); } },
+    followup: { title: 'Follow ups due today', sub: 'They send on their own. Write a fresh one with AI if you want to.', list: dueFollowUps(), right: function (l) { return link('Write with AI', { on: function () { var n = nextStep(l); openModal({ type: 'step', leadId: l.id, i: n.i, mode: 'edit', subject: n.subject, body: genFollowUp(l), tried: false, note: 'Written with AI. Read it, then save.' }); } }); } },
+    waiting: { title: 'Waiting for Monday', sub: 'Over today\u2019s daily limit. They send first on Monday, the next send day, so nobody gets lost.', list: LEADS.filter(function (l) { return alive(l) && l.st === 'new'; }), total: WAITING_TOTAL, right: function () { return badge('Waiting', 'b-neutral'); } }
+  }[m.kind];
+  var total = def.total != null ? def.total : def.list.length, rows = def.list.slice(0, 12);
+  return overlay('batch' + m.kind, '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="baTitle">' + dlgHead(def.title + ' (' + fmt(total) + ')', def.sub, 'baTitle') + '<div class="dlg-body">' + (rows.length ? '<ul class="list list-boxed">' + rows.map(function (l) {
+    return '<li style="align-items:center"><div class="grow person">' + avatar(l.name) + '<div style="min-width:0"><a class="name-link" href="#/p/' + l.id + '">' + esc(l.name) + '</a><div class="cell-sub">' + esc(l.niche) + ' \u00b7 ' + esc(l.kind === 'brand' ? 'Brand inbox' : 'Partnerships') + '</div></div></div>' + def.right(l) + '</li>';
+  }).join('') + '</ul><p class="hint" style="margin:12px 0 0">Showing ' + rows.length + ' of ' + fmt(total) + '. The real app lists them all.</p>' : '<div class="empty">Nothing here right now.</div>') + '</div><div class="dlg-foot">' + btn('Close', { on: closeModal, autofocus: 1 }) + '</div></div>');
+}
+function mReplyAi(m) {
+  var r = m.r, first = r.from.split(' ')[0], err = m.tried && !m.text.trim();
+  return overlay('replyAi', '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="raTitle">' + dlgHead('Reply to ' + first, r.company, 'raTitle') + '<div class="dlg-body form"><div class="mail"><div class="cell-sub" style="margin-bottom:6px">Their reply</div><div class="mail-body">\u201c' + esc(r.quote) + '\u201d</div></div>' +
+    (m.loading ? '<div aria-busy="true" aria-label="Writing" class="stack"><span class="skel" style="width:40%"></span><span class="skel"></span><span class="skel" style="width:80%"></span></div>' :
+      '<div class="row">' + btn('Shorter', { sm: 1, on: function () { var p = m.text.split('\n\n'); if (p.length > 2) { m.text = p[0] + '\n\n' + p[1].split('. ')[0].replace(/\.$/, '') + '.\n\n' + p[p.length - 1]; } render(); } }) + btn('Warmer', { sm: 1, on: function () { m.text = warmer(m.text); render(); } }) + btn('Write again', { sm: 1, icon: 'sparkle', on: function () { m.text = replyDraft(r); render(); } }) + '</div>' +
+      field('Your reply', 'raText', area('raText', m.text, function (e) { m.text = e.target.value; }, 8, { err: err }), { req: 1, err: err ? 'Write a reply before opening Gmail.' : '', hint: 'Sample text in this demo. In the real app, AI writes it. It only goes out when you send it from Gmail.' })) +
+    '</div><div class="dlg-foot">' + btn('Cancel', { on: closeModal }) + primary('Open in Gmail with this reply', { icon: 'external', disabled: m.loading, on: function () { if (!m.text.trim()) { m.tried = true; render(); return; } S.replyDone[r.id] = true; save(); logIt('Replied to ' + r.from + '.'); closeModal(); toast('Reply ready in Gmail (sample)'); } }) + '</div></div>');
 }
 function mDetails(m) {
   var l = BY[m.leadId], ne = m.tried && !m.name.trim(), ee = m.tried && !emailOk(m.email);
