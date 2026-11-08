@@ -1,0 +1,1 @@
+import{a9 as p,r as u}from"./index-CPP3cnF7.js";function l(r){const[c,n]=p(),o=Object.fromEntries(Object.keys(r).map(e=>[e,c.get(e)??r[e]])),m=u.useCallback(e=>{n(i=>{const t=new URLSearchParams(i);for(const[s,a]of Object.entries(e))!a||a===r[s]?t.delete(s):t.set(s,a);return"page"in e||t.delete("page"),t},{replace:!0})},[n]);return[o,m]}export{l as u};
