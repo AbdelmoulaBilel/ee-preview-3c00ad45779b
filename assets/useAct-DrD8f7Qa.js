@@ -1,1 +1,0 @@
-import{Z as c,r as u,t as s}from"./index-CgZ8RuBW.js";function o(){const a=c();return u.useCallback(async(i,e,r)=>{try{const t=await i;return e&&s(e,r?{undo:r}:void 0),await a.invalidateQueries(),t}catch(t){s(t.message,{bad:!0});return}},[a])}export{o as u};
